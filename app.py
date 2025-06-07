@@ -52,7 +52,6 @@ class SingleLayerTranscoder(nn.Module):
         self.eval()
 
 # ==== Load Models ====
-@st.cache(allow_output_mutation=True)
 def load_models():
     policy = PolicyNetwork()
     policy.load_state_dict(torch.load(POLICY_CHECKPOINT, map_location='cpu'))
@@ -78,7 +77,7 @@ def run_episodes(intervene_on=None):
         total_r = 0.0
         ep_frames = []
         while not done:
-            frame = env.render(mode='rgb_array')
+            frame = env.render()
             if ep == 0:
                 ep_frames.append(frame)
             state_tensor = torch.from_numpy(np.asarray(state)).float().unsqueeze(0)
