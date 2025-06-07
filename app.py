@@ -50,7 +50,6 @@ class SingleLayerTranscoder(nn.Module):
         self.eval()
 
 # ==== Load Models ====
-@st.cache(allow_output_mutation=True)
 def load_models():
     policy = PolicyNetwork()
     policy.load_state_dict(torch.load(POLICY_CHECKPOINT, map_location='cpu'))
@@ -59,7 +58,7 @@ def load_models():
     out_dim = 0
     if(LAYER=='layer1'):
         in_dim = 4
-        out_dim = 128
+        out_dim = 64
     elif(LAYER=='layer2'):
         in_dim = 128
         out_dim = 64
