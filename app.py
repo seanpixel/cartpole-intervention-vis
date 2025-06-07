@@ -55,8 +55,14 @@ def load_models():
     policy = PolicyNetwork()
     policy.load_state_dict(torch.load(POLICY_CHECKPOINT, map_location='cpu'))
     policy.eval()
-    in_dim = 4 if LAYER == 'layer1' else 128
-    out_dim = 128 if LAYER == 'layer1' else 64
+    in_dim, out_dim = 0
+    if(LAYER=='layer1'):
+        in_dim = 4
+        out_dim = 128
+    elif(LAYER=='layer2'):
+        in_dim = 128
+        out_dim = 64
+    
     transcoder = SingleLayerTranscoder(in_dim, TRANSCODER_DIM, out_dim)
     ckpt = os.path.join(MODEL_DIR, f"{TRANSCODER_DIM}dim_transcoder_{LAYER}.pth")
     transcoder.load_ckpt(ckpt)
@@ -73,7 +79,7 @@ def run_episode(intervene_on=None):
     done = False
     frames = []
     while not done:
-        frame = env.render(mode='rgb_array')
+        frame = env.render()
         frames.append(frame)
         state_tensor = torch.from_numpy(np.asarray(state)).float().unsqueeze(0)
         with torch.no_grad():
