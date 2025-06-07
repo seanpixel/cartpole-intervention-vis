@@ -73,7 +73,7 @@ policy, decoder_col = load_models()
 
 # ==== Run Single Episode ====
 def run_episode(intervene_on=None):
-    env = gym.make(ENV_NAME)
+    env = gym.make(ENV_NAME, render_mode="rgb_array")
     reset_out = env.reset()
     state = reset_out[0] if isinstance(reset_out, tuple) else reset_out
     done = False
