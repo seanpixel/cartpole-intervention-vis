@@ -56,8 +56,14 @@ def load_models():
     policy = PolicyNetwork()
     policy.load_state_dict(torch.load(POLICY_CHECKPOINT, map_location='cpu'))
     policy.eval()
-    in_dim = 4 if LAYER=='layer1' else 128
-    out_dim = 128 if LAYER=='layer2' else 64
+    in_dim = 0
+    out_dim = 0
+    if(LAYER=='layer1'):
+        in_dim = 4
+        out_dim = 128
+    elif(LAYER=='layer2'):
+        in_dim = 128
+        out_dim = 64
     transcoder = SingleLayerTranscoder(in_dim, TRANSCODER_DIM, out_dim)
     ckpt = os.path.join(MODEL_DIR, f"{TRANSCODER_DIM}dim_transcoder_{LAYER}.pth")
     transcoder.load_ckpt(ckpt)
