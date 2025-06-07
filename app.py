@@ -52,13 +52,12 @@ class SingleLayerTranscoder(nn.Module):
         self.eval()
 
 # ==== Load Models ====
-@st.cache(allow_output_mutation=True)
 def load_models():
     policy = PolicyNetwork()
     policy.load_state_dict(torch.load(POLICY_CHECKPOINT, map_location='cpu'))
     policy.eval()
     in_dim = 4 if LAYER=='layer1' else 128
-    out_dim = 128 if LAYER=='layer1' else 64
+    out_dim = 128 if LAYER=='layer2' else 64
     transcoder = SingleLayerTranscoder(in_dim, TRANSCODER_DIM, out_dim)
     ckpt = os.path.join(MODEL_DIR, f"{TRANSCODER_DIM}dim_transcoder_{LAYER}.pth")
     transcoder.load_ckpt(ckpt)
