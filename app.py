@@ -142,3 +142,4 @@ if st.button("Show Effects"):
     with col2:
         st.subheader("Intervention")
         st.image(intervention_gif, use_container_width=True)
+st.text("We see that the baseline model tends to keep moving to the right. When we boost features that think the pole is leaning right, the model actually improves at balancing by counteracting the baseline model's tendency to keep shifting right.\n\nOn the other hand, when we boost features like {layer 2 neuron 0} which activates when the pole rotates backward, the model makes the cart zip to the right since we are pushing the baseline to go even further to the right to counteract the pole leaning left.")
