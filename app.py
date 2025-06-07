@@ -51,13 +51,10 @@ class SingleLayerTranscoder(nn.Module):
         self.eval()
 
 # ==== Load Models ====
-@st.cache(allow_output_mutation=True)
 def load_models():
-    # Policy
     policy = PolicyNetwork()
     policy.load_state_dict(torch.load(POLICY_CHECKPOINT, map_location='cpu'))
     policy.eval()
-    # Transcoder
     in_dim = 4 if LAYER=='layer1' else 128
     out_dim = 128 if LAYER=='layer1' else 64
     transcoder = SingleLayerTranscoder(in_dim, TRANSCODER_DIM, out_dim)
@@ -68,29 +65,44 @@ def load_models():
 
 policy, decoder_col = load_models()
 
-# ==== Run Episodes (with optional frame capture) ====
+# ==== Run Episodes ====
 def run_episodes(intervene_on=None):
-    env = gym.make(ENV_NAME)
-    rewards, fail_dirs = [], []
-    frames = []
-
+    # Use headless-compatible render_mode to always get frames
+    env = gym.make(ENV_NAME, render_mode='rgb_array')
+    rewards, fail_dirs, frames = [], [], []
     for ep in range(NUM_EPISODES):
-        state = env.reset()
+        reset_out = env.reset()
+        # handle new reset API
+        if isinstance(reset_out, tuple):
+            state = reset_out[0]
+        else:
+            state = reset_out
         done = False
         total_r = 0.0
         ep_frames = []
+
         while not done:
-            frame = env.render(mode='rgb_array')
+            # capture frame for first episode
+            frame = env.render()
             if ep == 0:
                 ep_frames.append(frame)
-            state_tensor = torch.from_numpy(state).float().unsqueeze(0)
+
+            state_tensor = torch.from_numpy(np.asarray(state)).float().unsqueeze(0)
             with torch.no_grad():
                 logits = policy(state_tensor, intervene_on)
                 probs = F.softmax(logits, dim=-1)
                 action = torch.multinomial(probs, 1).item()
-            state, r, done, _ = env.step(action)
+
+            step_out = env.step(action)
+            if isinstance(step_out, tuple) and len(step_out) == 5:
+                state, r, terminated, truncated, _ = step_out
+                done = terminated or truncated
+            else:
+                state, r, done, _ = step_out
+
             total_r += r
-        # classify failure for metrics
+
+        # classify failure
         angle, pos = state[2], state[0]
         if abs(angle) >= 0.2094:
             fd = 'pole'
@@ -98,23 +110,23 @@ def run_episodes(intervene_on=None):
             fd = 'cart'
         else:
             fd = 'none'
+
         rewards.append(total_r)
         fail_dirs.append(fd)
         if ep == 0:
             frames = ep_frames
+
     env.close()
     return rewards, fail_dirs, frames
 
 # ==== Streamlit UI ====
 st.title("CartPole Intervention Explorer")
-
-# Run comparison and capture frames
 intervene_cfg = {'layer': LAYER, 'decoder_col': decoder_col, 'scale': ALPHA} if ALPHA != 0.0 else None
+
 if st.button("Run Comparison"):
     base_rew, base_fail, base_frames = run_episodes(None)
     int_rew, int_fail, int_frames = run_episodes(intervene_cfg)
 
-    # Summary metrics
     st.subheader("Average Rewards")
     st.write(f"Baseline: {np.mean(base_rew):.2f} | Intervention: {np.mean(int_rew):.2f}")
 
@@ -132,9 +144,8 @@ if st.button("Run Comparison"):
     ax.legend()
     st.pyplot(fig)
 
-    # Episode playback
     st.subheader("Sample Episode Playback")
-    col1, col2 = st.beta_columns(2)
+    col1, col2 = st.columns(2)
     with col1:
         st.markdown("**Baseline**")
         idx = st.slider("Frame index (baseline)", 0, len(base_frames)-1, 0)
