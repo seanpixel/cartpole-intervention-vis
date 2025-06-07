@@ -58,7 +58,7 @@ def load_models():
     out_dim = 0
     if(LAYER=='layer1'):
         in_dim = 4
-        out_dim = 64
+        out_dim = 128
     elif(LAYER=='layer2'):
         in_dim = 128
         out_dim = 64
