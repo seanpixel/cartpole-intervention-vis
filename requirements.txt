@@ -12,7 +12,7 @@ matplotlib==3.10.3
 # Gym + renderer
 gym==0.26.2
 pyglet==2.0.9
-gymnasium[classic_control]==0.21.0
+gymnasium[classic_control]==1.1.0
 
 # PyTorch
 torch==2.0.1
