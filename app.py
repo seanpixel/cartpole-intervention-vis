@@ -7,6 +7,8 @@ import numpy as np
 import streamlit as st
 import matplotlib.pyplot as plt
 import pandas as pd
+import io
+from PIL import Image
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────────
 ENV_NAME = "CartPole-v1"
@@ -36,8 +38,7 @@ class PolicyNetwork(nn.Module):
         h2 = F.relu(z2)
         if intervene_on and intervene_on['layer']=='layer2':
             h2 = h2 + intervene_on['decoder_col'] * intervene_on['scale']
-        logits = self.fc3(h2)
-        return logits
+        return self.fc3(h2)
 
 # ==== Transcoder Definition ====
 class SingleLayerTranscoder(nn.Module):
@@ -51,6 +52,7 @@ class SingleLayerTranscoder(nn.Module):
         self.eval()
 
 # ==== Load Models ====
+@st.cache(allow_output_mutation=True)
 def load_models():
     policy = PolicyNetwork()
     policy.load_state_dict(torch.load(POLICY_CHECKPOINT, map_location='cpu'))
@@ -67,62 +69,61 @@ policy, decoder_col = load_models()
 
 # ==== Run Episodes ====
 def run_episodes(intervene_on=None):
-    # Use headless-compatible render_mode to always get frames
-    env = gym.make(ENV_NAME, render_mode='rgb_array')
+    env = gym.make(ENV_NAME)
     rewards, fail_dirs, frames = [], [], []
     for ep in range(NUM_EPISODES):
         reset_out = env.reset()
-        # handle new reset API
-        if isinstance(reset_out, tuple):
-            state = reset_out[0]
-        else:
-            state = reset_out
+        state = reset_out[0] if isinstance(reset_out, tuple) else reset_out
         done = False
         total_r = 0.0
         ep_frames = []
-
         while not done:
-            # capture frame for first episode
-            frame = env.render()
+            frame = env.render(mode='rgb_array')
             if ep == 0:
                 ep_frames.append(frame)
-
             state_tensor = torch.from_numpy(np.asarray(state)).float().unsqueeze(0)
             with torch.no_grad():
                 logits = policy(state_tensor, intervene_on)
                 probs = F.softmax(logits, dim=-1)
                 action = torch.multinomial(probs, 1).item()
-
             step_out = env.step(action)
             if isinstance(step_out, tuple) and len(step_out) == 5:
                 state, r, terminated, truncated, _ = step_out
                 done = terminated or truncated
             else:
                 state, r, done, _ = step_out
-
             total_r += r
-
-        # classify failure
         angle, pos = state[2], state[0]
+        fd = 'none'
         if abs(angle) >= 0.2094:
             fd = 'pole'
         elif abs(pos) >= 2.4:
             fd = 'cart'
-        else:
-            fd = 'none'
-
         rewards.append(total_r)
         fail_dirs.append(fd)
         if ep == 0:
             frames = ep_frames
-
     env.close()
     return rewards, fail_dirs, frames
+
+# ==== Utility: Build GIF ====
+def build_gif(frames, duration=50):
+    pil_frames = [Image.fromarray(f) for f in frames]
+    buf = io.BytesIO()
+    pil_frames[0].save(
+        buf,
+        format='GIF',
+        save_all=True,
+        append_images=pil_frames[1:],
+        duration=duration,
+        loop=0
+    )
+    buf.seek(0)
+    return buf
 
 # ==== Streamlit UI ====
 st.title("CartPole Intervention Explorer")
 intervene_cfg = {'layer': LAYER, 'decoder_col': decoder_col, 'scale': ALPHA} if ALPHA != 0.0 else None
-
 if st.button("Run Comparison"):
     base_rew, base_fail, base_frames = run_episodes(None)
     int_rew, int_fail, int_frames = run_episodes(intervene_cfg)
@@ -144,13 +145,11 @@ if st.button("Run Comparison"):
     ax.legend()
     st.pyplot(fig)
 
-    st.subheader("Sample Episode Playback")
+    st.subheader("Sample Episode Playback (Animation)")
+    gif1 = build_gif(base_frames)
+    gif2 = build_gif(int_frames)
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("**Baseline**")
-        idx = st.slider("Frame index (baseline)", 0, len(base_frames)-1, 0)
-        st.image(base_frames[idx], caption=f"Frame {idx}")
+        st.image(gif1, caption="Baseline", use_column_width=True)
     with col2:
-        st.markdown("**Intervention**")
-        idx2 = st.slider("Frame index (intervention)", 0, len(int_frames)-1, 0, key='int_idx')
-        st.image(int_frames[idx2], caption=f"Frame {idx2}")
+        st.image(gif2, caption="Intervention", use_column_width=True)
