@@ -130,7 +130,7 @@ def build_gif(frames, duration=30):
 
 # ==== Streamlit interface ==== 
 st.title("CartPole Causal Intervention (4‑Dim) Explorer")
-st.text(f"You are boosting the feature that detects: '{feature_descriptions.get((LAYER, NEURON), 'No description available.')}' by {ALPHA}.\nThink of it as tricking the model that the feature is activating stronger / weaker based on alpha")
+st.text(f"You are boosting the feature that detects: '{feature_descriptions.get((LAYER, NEURON), 'No description available.')}' by {ALPHA}.\nThink of it as tricking the model that the feature is activating stronger / weaker based on alpha\n\nWait 10-20 seconds for the episode to generate!")
 if st.button("Show Effects"):
     baseline_gif = build_gif(run_episode(None))
     intervention_cfg = {'layer': LAYER, 'decoder_col': decoder_col, 'scale': ALPHA} if ALPHA != 0.0 else None
