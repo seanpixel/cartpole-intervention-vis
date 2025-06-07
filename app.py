@@ -8,18 +8,37 @@ import streamlit as st
 import io
 from PIL import Image
 
-# ─── CONFIG ──────────────────────────────────────────────────────────────────────
+# ─── CONFIGURATION ─────────────────────────────────────────────────────────────
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ENV_NAME = "CartPole-v1"
 MODEL_DIR = "models"
 POLICY_CHECKPOINT = os.path.join(MODEL_DIR, "policy_cartpole.pth")
-TRANSCODER_DIM = st.sidebar.selectbox("Transcoder dim", [2, 4, 8], index=1)
-LAYER = st.sidebar.selectbox("Intervene on layer", ["layer1", "layer2"], index=0)
-NEURON = st.sidebar.number_input("Neuron index", 0, TRANSCODER_DIM - 1, 0)
-ALPHA = st.sidebar.slider("Alpha scale", -3.0, 3.0, 0.0, 0.1)
-# Only one episode for visualization
-# ─────────────────────────────────────────────────────────────────────────────────
 
-# ==== Policy Definition ====
+# Only 4-dim transcoder
+LATENT_DIM = 4
+
+# Sidebar controls
+LAYER = st.sidebar.selectbox("Intervene on layer", ["layer1", "layer2"])
+NEURON = st.sidebar.number_input("Neuron index", 0, LATENT_DIM - 1, 0)
+ALPHA = st.sidebar.slider("Intervention strength (α)", -3.0, 3.0, 0.0, 0.1)
+
+# Feature descriptions for 4-dim model
+feature_descriptions = {
+    ('layer1', 0): "Cart far right and moving right with slight backward pole rotation.",
+    ('layer1', 1): "Cart at right edge, nearly still, with pole upright and small forward tilt.",
+    ('layer1', 2): "Cart near center with pole slightly tilting left and negative angular velocity.",
+    ('layer1', 3): "Cart at right side with pole swinging forward (positive angular velocity).",
+    ('layer2', 0): "High confidence state: cart moving forward, pole rotating backward strongly.",
+    ('layer2', 1): "Dormant feature; remains inactive during typical play.",
+    ('layer2', 2): "Forward-leaning pole with positive angular velocity while cart is right of center.",
+    ('layer2', 3): "Moderate forward pole swing with slight backward cart velocity."
+}
+
+st.sidebar.markdown(
+    f"**Feature Description**: {feature_descriptions.get((LAYER, NEURON), 'No description available.')}"
+)
+
+# ==== Policy network matching training ====
 class PolicyNetwork(nn.Module):
     def __init__(self):
         super().__init__()
@@ -38,56 +57,56 @@ class PolicyNetwork(nn.Module):
             h2 = h2 + intervene_on['decoder_col'] * intervene_on['scale']
         return self.fc3(h2)
 
-# ==== Transcoder Definition ====
+# ==== Single-layer transcoder loader ====
 class SingleLayerTranscoder(nn.Module):
-    def __init__(self, in_dim, latent_dim, out_dim):
+    def __init__(self, in_dim):
         super().__init__()
-        self.encoder = nn.Sequential(nn.Linear(in_dim, latent_dim), nn.ReLU())
-        self.decoder = nn.Linear(latent_dim, out_dim)
+        self.encoder = nn.Sequential(nn.Linear(in_dim, LATENT_DIM), nn.ReLU())
+        # decoder maps latent back to hidden dim
+        self.decoder = nn.Linear(LATENT_DIM, 128 if in_dim==4 else 64)
 
-    def load_ckpt(self, path):
-        self.load_state_dict(torch.load(path, map_location='cpu'))
+    def load_ckpt(self, ckpt_path):
+        self.load_state_dict(torch.load(ckpt_path, map_location=DEVICE))
         self.eval()
 
-# ==== Load Models ====
+# ==== Load models & extract decoder column ====
+@st.cache(allow_output_mutation=True)
 def load_models():
-    policy = PolicyNetwork()
-    policy.load_state_dict(torch.load(POLICY_CHECKPOINT, map_location='cpu'))
+    # Load policy
+    policy = PolicyNetwork().to(DEVICE)
+    policy.load_state_dict(torch.load(POLICY_CHECKPOINT, map_location=DEVICE))
     policy.eval()
-    in_dim = 0
-    out_dim = 0
-    if(LAYER=='layer1'):
+    # Choose transcoder checkpoint based on layer
+    if LAYER == 'layer1':
         in_dim = 4
-        out_dim = 128
-    elif(LAYER=='layer2'):
+    else:
         in_dim = 128
-        out_dim = 64
-    
-    transcoder = SingleLayerTranscoder(in_dim, TRANSCODER_DIM, out_dim)
-    ckpt = os.path.join(MODEL_DIR, f"{TRANSCODER_DIM}dim_transcoder_{LAYER}.pth")
+    transcoder = SingleLayerTranscoder(in_dim).to(DEVICE)
+    ckpt = os.path.join(MODEL_DIR, f"4dim_transcoder_{LAYER}.pth")
     transcoder.load_ckpt(ckpt)
-    decoder_col = transcoder.decoder.weight.data[:, NEURON].view(1, -1)
+    # Select decoder column for user-specified neuron
+    decoder_col = transcoder.decoder.weight.data[:, NEURON].view(1, -1).to(DEVICE)
     return policy, decoder_col
 
 policy, decoder_col = load_models()
 
-# ==== Run Single Episode ====
-def run_episode(intervene_on=None):
-    env = gym.make(ENV_NAME, render_mode="rgb_array")
+# ==== Run single CartPole episode and capture frames ====
+def run_episode(intervene_cfg=None):
+    env = gym.make(ENV_NAME)
     reset_out = env.reset()
     state = reset_out[0] if isinstance(reset_out, tuple) else reset_out
     done = False
     frames = []
     while not done:
-        frame = env.render()
+        frame = env.render(mode='rgb_array')
         frames.append(frame)
-        state_tensor = torch.from_numpy(np.asarray(state)).float().unsqueeze(0)
+        state_tensor = torch.from_numpy(state).float().unsqueeze(0).to(DEVICE)
         with torch.no_grad():
-            logits = policy(state_tensor, intervene_on)
+            logits = policy(state_tensor, intervene_cfg)
             probs = F.softmax(logits, dim=-1)
             action = torch.multinomial(probs, 1).item()
         step_out = env.step(action)
-        if isinstance(step_out, tuple) and len(step_out) == 5:
+        if len(step_out) == 5:
             state, _, terminated, truncated, _ = step_out
             done = terminated or truncated
         else:
@@ -95,11 +114,10 @@ def run_episode(intervene_on=None):
     env.close()
     return frames
 
-# ==== Utility: Build GIF ====
+# ==== Build animated GIF ==== 
 def build_gif(frames, duration=30):
-    valid_frames = [f for f in frames if f is not None]
-    pil_frames = [Image.fromarray(f) for f in valid_frames]
     buf = io.BytesIO()
+    pil_frames = [Image.fromarray(f) for f in frames]
     pil_frames[0].save(
         buf,
         format='GIF',
@@ -111,21 +129,16 @@ def build_gif(frames, duration=30):
     buf.seek(0)
     return buf
 
-# ==== Streamlit UI ====
-st.title("CartPole Causal Intervention Visualization")
+# ==== Streamlit interface ==== 
+st.title("CartPole Causal Intervention (4‑Dim) Explorer")
 if st.button("Show Effects"):
-    # Baseline and Intervention GIFs
-    baseline_frames = run_episode(None)
+    baseline_gif = build_gif(run_episode(None))
     intervention_cfg = {'layer': LAYER, 'decoder_col': decoder_col, 'scale': ALPHA} if ALPHA != 0.0 else None
-    intervention_frames = run_episode(intervention_cfg)
-
-    gif_base = build_gif(baseline_frames)
-    gif_int = build_gif(intervention_frames)
-
+    intervention_gif = build_gif(run_episode(intervention_cfg))
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Baseline")
-        st.image(gif_base, use_container_width=True)
+        st.image(baseline_gif, use_column_width=True)
     with col2:
         st.subheader("Intervention")
-        st.image(gif_int, use_container_width=True)
+        st.image(intervention_gif, use_column_width=True)
