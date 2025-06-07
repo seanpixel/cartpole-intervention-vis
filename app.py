@@ -70,7 +70,6 @@ class SingleLayerTranscoder(nn.Module):
         self.eval()
 
 # ==== Load models & extract decoder column ====
-@st.cache(allow_output_mutation=True)
 def load_models():
     # Load policy
     policy = PolicyNetwork().to(DEVICE)
@@ -138,7 +137,7 @@ if st.button("Show Effects"):
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Baseline")
-        st.image(baseline_gif, use_column_width=True)
+        st.image(baseline_gif, use_container_width=True)
     with col2:
         st.subheader("Intervention")
-        st.image(intervention_gif, use_column_width=True)
+        st.image(intervention_gif, use_container_width=True)
