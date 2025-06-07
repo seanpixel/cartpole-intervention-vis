@@ -1,3 +1,6 @@
+# bring back distutils for any packages that need it
+setuptools>=65.5.0
+
 # core
 streamlit==1.45.1
 
@@ -6,9 +9,9 @@ numpy==1.23.5
 pandas==2.3.0
 matplotlib==3.10.3
 
-# Gym (CartPole doesn’t require Box2D, but you’ll need pyglet for rendering)
+# Gym + renderer
 gym==0.26.2
 pyglet==2.0.9
 
-# PyTorch — pick the latest 2.x CPU wheel
+# PyTorch
 torch==2.0.1
