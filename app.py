@@ -52,6 +52,7 @@ class SingleLayerTranscoder(nn.Module):
         self.eval()
 
 # ==== Load Models ====
+@st.cache(allow_output_mutation=True)
 def load_models():
     policy = PolicyNetwork()
     policy.load_state_dict(torch.load(POLICY_CHECKPOINT, map_location='cpu'))
@@ -68,7 +69,8 @@ policy, decoder_col = load_models()
 
 # ==== Run Episodes ====
 def run_episodes(intervene_on=None):
-    env = gym.make(ENV_NAME)
+    # Initialize headless renderable env
+    env = gym.make(ENV_NAME, render_mode='rgb_array')
     rewards, fail_dirs, frames = [], [], []
     for ep in range(NUM_EPISODES):
         reset_out = env.reset()
@@ -77,6 +79,7 @@ def run_episodes(intervene_on=None):
         total_r = 0.0
         ep_frames = []
         while not done:
+            # capture frame for first episode
             frame = env.render()
             if ep == 0:
                 ep_frames.append(frame)
@@ -92,12 +95,14 @@ def run_episodes(intervene_on=None):
             else:
                 state, r, done, _ = step_out
             total_r += r
+        # classify failure
         angle, pos = state[2], state[0]
-        fd = 'none'
         if abs(angle) >= 0.2094:
             fd = 'pole'
         elif abs(pos) >= 2.4:
             fd = 'cart'
+        else:
+            fd = 'none'
         rewards.append(total_r)
         fail_dirs.append(fd)
         if ep == 0:
@@ -107,7 +112,9 @@ def run_episodes(intervene_on=None):
 
 # ==== Utility: Build GIF ====
 def build_gif(frames, duration=50):
-    pil_frames = [Image.fromarray(f) for f in frames]
+    # Filter out any None frames just in case
+    valid_frames = [f for f in frames if f is not None]
+    pil_frames = [Image.fromarray(f) for f in valid_frames]
     buf = io.BytesIO()
     pil_frames[0].save(
         buf,
@@ -145,6 +152,7 @@ if st.button("Run Comparison"):
     st.pyplot(fig)
 
     st.subheader("Sample Episode Playback (Animation)")
+    # Safely build GIFs
     gif1 = build_gif(base_frames)
     gif2 = build_gif(int_frames)
     col1, col2 = st.columns(2)
