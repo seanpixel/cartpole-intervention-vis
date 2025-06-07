@@ -91,13 +91,13 @@ policy, decoder_col = load_models()
 
 # ==== Run single CartPole episode and capture frames ====
 def run_episode(intervene_cfg=None):
-    env = gym.make(ENV_NAME)
+    env = gym.make(ENV_NAME, render_mode="rgb_array"
     reset_out = env.reset()
     state = reset_out[0] if isinstance(reset_out, tuple) else reset_out
     done = False
     frames = []
     while not done:
-        frame = env.render(mode='rgb_array')
+        frame = env.render()
         frames.append(frame)
         state_tensor = torch.from_numpy(state).float().unsqueeze(0).to(DEVICE)
         with torch.no_grad():
